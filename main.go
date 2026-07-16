@@ -16,8 +16,8 @@ import (
 	"github.com/dhowden/tag"
 )
 
+// one day the user shall control this
 const SAMPLE_QUALITY int = 10
-
 
 // track struct to keep info about a track
 type Track struct {
@@ -50,6 +50,15 @@ func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
+}
+
+func songTime(samples int, rate beep.SampleRate) string {
+	var totalTime int = samples / int(rate)
+	var minutes int = totalTime / 60
+	var seconds int = totalTime % 60
+	var humanTime string = fmt.Sprintf("%d:%02d", minutes, seconds)
+
+	return humanTime
 }
 
 // loads folder with songs from a path with an return of a array
@@ -236,6 +245,8 @@ func (m model) Init() tea.Cmd {
 func (m model) View() string {
 	// finds current track so metadata can be displayed
 	currentTrack := m.playlist[m.currentIdx]
+	currentTime := songTime(m.streamer.Position(), m.sampleRate)
+	totalTime := songTime(m.streamer.Len(), m.sampleRate)
 	
 	// play / pause status
 	var status string = "playing..."
@@ -244,10 +255,26 @@ func (m model) View() string {
 	}
 	
 	// outputs a string of letters and info
-	var output string = fmt.Sprintf(
-		"\nBUBBLES MUSIC PLAYER GO\n\n%s\n%s\n%s\n%s\nStatus: %s\n\n[Space] pause/play\n[q] quit", 
-		currentTrack.title, currentTrack.album, currentTrack.artist, currentTrack.genre, 
-		status)
+	var output string = fmt.Sprintf(`
+	GO MUSIC PLAYER BUBBLES
+
+	TITLE: %s
+	ALBUM: %s
+	ARTIST: %s
+	
+	%s/%s
+
+	STATUS: %s
+
+	[q/esc] QUIT
+	[space] PLAY / PAUSE
+	[p/n] PREV / NEXT
+	`,
+	currentTrack.title,
+	currentTrack.album,
+	currentTrack.artist,
+	currentTime, totalTime,
+	status)
 	return output
 }
 
@@ -262,7 +289,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// reads the string of the input
 			switch msg.String() {
 				// quitting, sends a message to tea to quit
-				case "q", "ctrl+c":
+				case "q", "ctrl+c", "esc":
 					return m, tea.Quit
 				// updates the playback state
 				case " ":
