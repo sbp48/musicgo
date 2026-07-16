@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -14,6 +17,8 @@ import (
 	"github.com/faiface/beep/speaker"
 
 	"github.com/dhowden/tag"
+
+	"golang.org/x/sys/unix"
 )
 
 // one day the user shall control this
@@ -41,7 +46,11 @@ type model struct {
 	streamer beep.StreamSeekCloser
 
 	sampleRate beep.SampleRate
+
+	initialArt []byte
 }
+
+type artLoadedMsg string
 
 // time 
 type tickMsg time.Time
@@ -59,6 +68,62 @@ func songTime(samples int, rate beep.SampleRate) string {
 	var humanTime string = fmt.Sprintf("%d:%02d", minutes, seconds)
 
 	return humanTime
+}
+
+func getWindowSize(fd int) (cols, rows, xpixel, ypixel int, err error) {
+	ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return int(ws.Col), int(ws.Row), int(ws.Xpixel), int(ws.Ypixel), nil
+}
+
+func drawAlbumArt(imgBytes []byte) {
+	if len(imgBytes) == 0 {
+		return
+	}
+
+	args := []string{
+		"+kitten",
+		"icat",
+		"--transfer-mode=stream",
+		"--stdin=yes",
+		"--place=24x12@2x2",
+	}
+
+	cols, rows, xpx, ypx, err := getWindowSize(int(os.Stdout.Fd()))
+	if err == nil && xpx > 0 && ypx > 0 {
+		args = append(args, fmt.Sprintf("--use-window-size=%d,%d,%d,%d", cols, rows, xpx, ypx))
+	}
+
+	cmd := exec.Command("kitty", args...)
+
+	cmd.Stdin = bytes.NewReader(imgBytes)
+	cmd.Stdout = os.Stderr
+
+	fmt.Fprint(os.Stderr, "\x1b7")
+	_ = cmd.Run()
+	fmt.Fprint(os.Stderr, "\x1b8")
+
+}
+
+func clearAlbumArt() {
+	cmd := exec.Command("kitty", "+kitten", "icat", "--clear")
+	cmd.Stdout = os.Stderr
+
+	fmt.Fprint(os.Stderr, "\x1b7")
+	_ = cmd.Run()
+	fmt.Fprint(os.Stderr, "\x1b8")
+}
+
+func drawAlbumArtCmd(imgBytes []byte) tea.Cmd {
+	return func() tea.Msg {
+		clearAlbumArt()
+		if len(imgBytes) > 0 {
+			drawAlbumArt(imgBytes)
+		}
+		return nil
+	}
 }
 
 // loads folder with songs from a path with an return of a array
@@ -133,7 +198,7 @@ func loadFolder(folderPath string) []Track {
 
 // a function for switching tracks takes a track index and outputs an error if an error is thrown
 // if there is no error that means that the function has succeeded
-func (m *model) switchTrack(newIdx int) error {
+func (m *model) switchTrack(newIdx int) ([]byte, error) {
 
 	// checks if there is currently a streamer
 	if m.streamer != nil {
@@ -150,14 +215,29 @@ func (m *model) switchTrack(newIdx int) error {
 	// opens the new track
 	f, err := os.Open(newTrack.path)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	
+	var artBytes []byte
+	meta, err := tag.ReadFrom(f)
+	if err == nil {
+		img := meta.Picture()
+		if img != nil {
+			artBytes = img.Data
+		}
+	}
+
+	_, err = f.Seek(0, io.SeekStart)
+	if err != nil {
+		f.Close()
+		return nil, err
 	}
 	
 	// decodes the file and creates a streamer and gets sample rate info
 	streamer, format, err := flac.Decode(f)
 	if err != nil {
 		f.Close()
-		return err
+		return nil, err
 	}
 	
 	// resamples the audio file to match speaker sample rate
@@ -176,11 +256,13 @@ func (m *model) switchTrack(newIdx int) error {
 	speaker.Clear()
 	speaker.Play(m.ctrl)
 	// returns nil if fucntion is good
-	return nil
+	return artBytes, nil
 }
 
 // main loop
 func main(){
+	var initialArt []byte
+
 	// loads music folder
 	playlist := loadFolder("./music/")
 	if len(playlist) == 0 {
@@ -196,6 +278,16 @@ func main(){
 		log.Fatal(err)
 	}
 	
+	meta, err := tag.ReadFrom(f)
+	if err == nil && meta.Picture() != nil {
+		initialArt = meta.Picture().Data
+	}
+
+	_, err = f.Seek(0, io.SeekStart)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// creates streamer and decodes file
 	streamer, format, err := flac.Decode(f)
 	if err != nil {
@@ -226,62 +318,56 @@ func main(){
 		streamer: streamer,
 
 		sampleRate: format.SampleRate,
+
+		initialArt: initialArt,
 	}
 	
 	// starts a bubble tea program
-	p := tea.NewProgram(initModel)
+	p := tea.NewProgram(&initModel, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("error running program: %v", err)
 	}
 }
 
 // tea init
-func (m model) Init() tea.Cmd {
-	return tick()
+func (m *model) Init() tea.Cmd {
+	return tea.Batch(tick(), drawAlbumArtCmd(m.initialArt))
 }
 
-// the view function
-// basically this one draws the terminal and everything
-func (m model) View() string {
-	// finds current track so metadata can be displayed
+// the view function draws the terminal
+func (m *model) View() string {
 	currentTrack := m.playlist[m.currentIdx]
 	currentTime := songTime(m.streamer.Position(), m.sampleRate)
 	totalTime := songTime(m.streamer.Len(), m.sampleRate)
 	
-	// play / pause status
 	var status string = "playing..."
 	if m.isPaused {
 		status = "paused..."
 	}
 	
-	// outputs a string of letters and info
-	var output string = fmt.Sprintf(`
-	GO MUSIC PLAYER BUBBLES
+	const pad = "\x1b[28C"
 
-	TITLE: %s
-	ALBUM: %s
-	ARTIST: %s
-	
-	%s/%s
+	var output strings.Builder
+	output.WriteString("\n") 
+	output.WriteString(pad + "GO MUSIC PLAYER BUBBLES\n\n")
+	output.WriteString(pad + "TITLE: " + currentTrack.title + "\n")
+	output.WriteString(pad + "ALBUM: " + currentTrack.album + "\n")
+	output.WriteString(pad + "ARTIST: " + currentTrack.artist + "\n\n")
+	output.WriteString(pad + "TIME:   " + currentTime + " / " + totalTime + "\n")
+	output.WriteString(pad + "STATUS: " + status + "\n\n")
+	output.WriteString(pad + "[q/esc] QUIT\n")
+	output.WriteString(pad + "[space] PLAY / PAUSE\n")
+	output.WriteString(pad + "[p/n]   PREV / NEXT\n")
 
-	STATUS: %s
+	output.WriteString("\n\n\n\n\n")
 
-	[q/esc] QUIT
-	[space] PLAY / PAUSE
-	[p/n] PREV / NEXT
-	`,
-	currentTrack.title,
-	currentTrack.album,
-	currentTrack.artist,
-	currentTime, totalTime,
-	status)
-	return output
+	return output.String()
 }
 
 // the update function actually updates the state
 // listens to tea messages to know what to do
 // recieves a message, outputs a updated model and a message
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// listens for a message and reads its type
 	switch msg := msg.(type) {
 		// keyborad inputs
@@ -297,14 +383,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					speaker.Lock()
 					m.ctrl.Paused = m.isPaused
 					speaker.Unlock()
+					return m, nil
 				// skips to next song
 				case "n":
 					nextIdx := (m.currentIdx + 1) % len(m.playlist)
-					_ = m.switchTrack(nextIdx)
+					artBytes, err := m.switchTrack(nextIdx)
+					if err != nil {
+						return m, nil
+					}
+					return m, drawAlbumArtCmd(artBytes)
 				// skips to prev song
 				case "p":
 					prevIdx := (m.currentIdx - 1 + len(m.playlist)) % len(m.playlist)
-					_ = m.switchTrack(prevIdx)
+					artBytes, err := m.switchTrack(prevIdx)
+					if err != nil {
+						return m, nil
+					}
+					return m, drawAlbumArtCmd(artBytes)
 			}
 		// time update
 		case tickMsg:
@@ -315,7 +410,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// this is basically autoplay
 				if m.streamer.Position() >= m.streamer.Len() {
 					nextIdx := (m.currentIdx + 1) % len(m.playlist)
-					_ = m.switchTrack(nextIdx)
+					artBytes, err := m.switchTrack(nextIdx)
+					if err == nil {
+						return m, tea.Batch(tick(), drawAlbumArtCmd(artBytes))
+					}
 				}
 			}
 			// returns the new state and makes the time movr forwards
