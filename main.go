@@ -382,9 +382,9 @@ func (m *model) View() string {
 	currentTime := songTime(m.streamer.Position(), m.sampleRate)
 	totalTime := songTime(m.streamer.Len(), m.sampleRate)
 	
-	var status string = "playing..."
+	var status string = "PLAYING..."
 	if m.isPaused {
-		status = "paused..."
+		status = "PAUSED..."
 	}
 	
 	const pad = "\x1b[28C"
