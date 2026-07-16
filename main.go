@@ -16,6 +16,8 @@ import (
 	"github.com/dhowden/tag"
 )
 
+const SAMPLE_QUALITY int = 10
+
 type Track struct {
 	path string
 	
@@ -123,7 +125,7 @@ func (m *model) switchTrack(newIdx int) error {
 		return err
 	}
 	
-	resampled := beep.Resample(4, format.SampleRate, m.sampleRate, streamer)
+	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, m.sampleRate, streamer)
 
 	speaker.Lock()
 	m.ctrl.Streamer = resampled
@@ -157,7 +159,7 @@ func main(){
 	}
 
 	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	resampled := beep.Resample(4, format.SampleRate, format.SampleRate, streamer)	
+	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, format.SampleRate, streamer)	
 	ctrl := &beep.Ctrl {
 		Streamer: resampled,
 		Paused: false,
