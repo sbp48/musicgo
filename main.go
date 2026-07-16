@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"io"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/faiface/beep"
+	"github.com/faiface/beep/effects"
 	"github.com/faiface/beep/flac"
 	"github.com/faiface/beep/speaker"
 
@@ -48,6 +50,9 @@ type model struct {
 	sampleRate beep.SampleRate
 
 	initialArt []byte
+
+	volume *effects.Volume
+	volumePrecent int
 }
 
 type artLoadedMsg string
@@ -243,10 +248,18 @@ func (m *model) switchTrack(newIdx int) ([]byte, error) {
 	// resamples the audio file to match speaker sample rate
 	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, m.sampleRate, streamer)
 	
+	newVol := &effects.Volume {
+		Streamer: resampled,
+		Base: 2,
+		Volume: m.volume.Volume,
+		Silent: m.volume.Silent,
+	}
+	
 	// locks the speaker before changing variables
 	speaker.Lock()
 	// changes the streamer to resampled one
-	m.ctrl.Streamer = resampled
+	m.ctrl.Streamer = newVol
+	m.volume = newVol
 	m.streamer = streamer
 	m.currentIdx = newIdx
 	
@@ -257,6 +270,25 @@ func (m *model) switchTrack(newIdx int) ([]byte, error) {
 	speaker.Play(m.ctrl)
 	// returns nil if fucntion is good
 	return artBytes, nil
+}
+
+func (m *model) setVolume(precent int) {
+	if precent < 0 {
+		precent = 0
+	} 
+	if precent > 100 {
+		precent = 100
+	}
+
+	speaker.Lock()
+	m.volumePrecent = precent
+	if precent == 0 {
+		m.volume.Silent = true
+	} else {
+		m.volume.Silent = false
+		m.volume.Volume = math.Log2(float64(precent)/ 100.0)
+	}
+	speaker.Unlock()
 }
 
 // main loop
@@ -298,9 +330,16 @@ func main(){
 	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
 	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, format.SampleRate, streamer)	
 	
+	vol := &effects.Volume{
+		Streamer: resampled,
+		Base: 2,
+		Volume: 0,
+		Silent: false,
+	}
+
 	// creates a control so playback can be controlled
 	ctrl := &beep.Ctrl {
-		Streamer: resampled,
+		Streamer: vol,
 		Paused: false,
 	}
 	
@@ -320,6 +359,9 @@ func main(){
 		sampleRate: format.SampleRate,
 
 		initialArt: initialArt,
+
+		volume: vol,
+		volumePrecent: 100,
 	}
 	
 	// starts a bubble tea program
@@ -354,6 +396,7 @@ func (m *model) View() string {
 	output.WriteString(pad + "ALBUM: " + currentTrack.album + "\n")
 	output.WriteString(pad + "ARTIST: " + currentTrack.artist + "\n\n")
 	output.WriteString(pad + "TIME:   " + currentTime + " / " + totalTime + "\n")
+	output.WriteString(pad + fmt.Sprintf("VOLUME: %d%%", m.volumePrecent) + "\n\n")
 	output.WriteString(pad + "STATUS: " + status + "\n\n")
 	output.WriteString(pad + "[q/esc] QUIT\n")
 	output.WriteString(pad + "[space] PLAY / PAUSE\n")
@@ -400,6 +443,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					return m, drawAlbumArtCmd(artBytes)
+				case "up":
+					m.setVolume(m.volumePrecent + 5)
+					return m, nil
+				case "down":
+					m.setVolume(m.volumePrecent - 5)
+					return m, nil
 			}
 		// time update
 		case tickMsg:
