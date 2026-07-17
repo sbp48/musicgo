@@ -402,7 +402,7 @@ func (m *model) View() string {
 	output.WriteString(pad + "[space] PLAY / PAUSE\n")
 	output.WriteString(pad + "[p/n]   PREV / NEXT\n")
 
-	output.WriteString("\n\n\n\n\n")
+	output.WriteString("\n")
 
 	return output.String()
 }
