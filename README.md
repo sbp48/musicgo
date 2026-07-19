@@ -8,9 +8,9 @@ A TUI music player written in go utilizing beep and bubbletea.
 - fast idk
 
 ## Utils
-- [BubbleTea]("https://github.com/charmbracelet/bubbletea")
-- [beep]("https://github.com/faiface/beep")
-- [tag]("https://github.com/dhowden/tag")
+- [BubbleTea](https://github.com/charmbracelet/bubbletea)
+- [beep](https://github.com/faiface/beep)
+- [tag](https://github.com/dhowden/tag)
 
 ## How to run
 idk maybe one day
