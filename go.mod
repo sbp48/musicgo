@@ -1,4 +1,4 @@
-module musicgo
+module github.com/sbp48/musicgo
 
 go 1.26.5
 
