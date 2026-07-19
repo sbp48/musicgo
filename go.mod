@@ -1,4 +1,4 @@
-module gomusic
+module musicgo
 
 go 1.26.5
 
