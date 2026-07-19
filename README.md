@@ -13,4 +13,9 @@ A TUI music player written in go utilizing beep and bubbletea.
 - [tag](https://github.com/dhowden/tag)
 
 ## How to run
-idk maybe one day
+```bash
+go install [github.com/sbp48/musicgo@latest](https://github.com/sbp48/musicgo@latest)
+```
+
+## Other
+maybe Linux also needs ALSA
