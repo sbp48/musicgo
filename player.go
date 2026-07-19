@@ -103,7 +103,7 @@ func drawAlbumArt(imgBytes []byte) {
 
 	fmt.Fprint(os.Stderr, "\x1b7") 
 	_ = cmd.Run()
-	fmt.Fprint(os.Stderr, "\x1b8")
+	fmt.Fprint(os.Stderr, "\x1b8") 
 }
 
 func clearAlbumArt() {
@@ -158,7 +158,6 @@ func loadFolder(folderPath string) ([]Track, error) {
 			songAlbum := "Unknown Album"
 			songGenre := "Unknown Genre"
 
-			// adds metadata to corresponding variables if there is no error in reading metadata
 			metadata, err := tag.ReadFrom(f)
 			if err == nil {
 				if metadata.Title() != "" {
@@ -195,9 +194,6 @@ func loadFolder(folderPath string) ([]Track, error) {
 	return playlist, nil
 }
 
-// basically finds first tracks sample rate and then uses it as the master sample rate and
-// resamples every next song to that sample rate if needed
-// idk how to like overcome this but it works for now
 func peekSampleRate(path string) (beep.SampleRate, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -218,7 +214,6 @@ func (m *playerModel) switchTrack(newIdx int) ([]byte, error) {
 
 	// checks if there is currently a streamer
 	if m.streamer != nil {
-		// if there is a streamer it will close it
 		err := m.streamer.Close()
 		if err != nil {
 			log.Println("failed to close old streamer", err)
@@ -226,7 +221,6 @@ func (m *playerModel) switchTrack(newIdx int) ([]byte, error) {
 		m.streamer = nil
 	}
 
-	// the next song to be switched to is set by using the newIdx
 	newTrack := m.playlist[newIdx]
 
 	// opens the new track
@@ -260,9 +254,6 @@ func (m *playerModel) switchTrack(newIdx int) ([]byte, error) {
 	// resamples the audio file to match speaker sample rate
 	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, m.sampleRate, streamer)
 
-	// carries over the currently set volume rather than resetting to 100%
-	// on every track switch on the very first ever load, m.volume is nil,
-	// so fall back
 	baseVolume, baseSilent := 0.0, false
 	if m.volume != nil {
 		baseVolume, baseSilent = m.volume.Volume, m.volume.Silent
@@ -312,17 +303,17 @@ func (m *playerModel) setVolume(percent int) {
 
 // the view function draws the terminal
 func (m *playerModel) View() string {
-	if m.streamer == nil || len(m.playlist) == 0 {
-		return "\n LOADING \n"
+	if m == nil || m.streamer == nil || len(m.playlist) == 0 {
+		return "\n  loading...\n"
 	}
 
 	currentTrack := m.playlist[m.currentIdx]
 	currentTime := songTime(m.streamer.Position(), m.sampleRate)
 	totalTime := songTime(m.streamer.Len(), m.sampleRate)
 
-	var status string = "PLAYING..."
+	var status string = "playing..."
 	if m.isPaused {
-		status = "PAUSED..."
+		status = "paused..."
 	}
 
 	const pad = "\x1b[28C"
@@ -342,7 +333,7 @@ func (m *playerModel) View() string {
 	output.WriteString(pad + "[p/n]     PREV / NEXT\n")
 	output.WriteString(pad + "[up/down] VOLUME\n")
 
-	output.WriteString("\n\n\n\n\n")
+	output.WriteString("\n")
 
 	return output.String()
 }

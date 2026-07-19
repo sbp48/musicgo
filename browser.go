@@ -34,6 +34,7 @@ type browserModel struct {
 
 	scanning bool
 	errMsg string
+	selected bool
 }
 
 func newBrowserModel() browserModel {
@@ -145,11 +146,12 @@ func (m browserModel) Update(msg tea.Msg) (browserModel, tea.Cmd) {
 					}
 					return m, nil
 				case "enter":
-					if len(m.filtered) == 0 {
+					if m.selected || len(m.filtered) == 0 {
 						return m, nil
 					}
-					 chosen := m.filtered[m.cursor]
-					 return m, func() tea.Msg {return folderChosenMsg{path: chosen}}
+					m.selected = true
+					chosen := m.filtered[m.cursor]
+					return m, func() tea.Msg {return folderChosenMsg{path: chosen}}
 			}
 	}
 
@@ -165,8 +167,8 @@ func (m browserModel) Update(msg tea.Msg) (browserModel, tea.Cmd) {
 
 func (m browserModel) View() string {
 	var b strings.Builder
-
-	b.WriteString("\n SELECT MUSIC DIRECTORY\n\n")
+	b.WriteString("\n GO MUSIC PLAYER BUBBLES \n")
+	b.WriteString(" SELECT MUSIC DIRECTORY\n")
 	b.WriteString("   " + m.input.View() + "\n\n")
 
 	switch {

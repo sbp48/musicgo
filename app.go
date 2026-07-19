@@ -43,6 +43,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd, err := m.openFolder(msg.path)
 			if err != nil {
 				m.browser.errMsg = err.Error()
+				m.browser.selected = false
 				return m, nil
 			}
 			m.browser.errMsg = ""
@@ -50,6 +51,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backToBrowserMsg:
 			m.teardownPlayer()
 			m.browser.errMsg = ""
+			m.browser.selected = false
 			return m, tea.ClearScreen
 		
 		case tea.KeyMsg:
@@ -72,6 +74,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.browser, cmd = m.browser.Update(msg)
 			return m, cmd
 		case statePlaying:
+			if m.player == nil {
+				m.state = stateBrowsing
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.player, cmd = m.player.Update(msg)
 			return m, cmd
@@ -110,8 +116,6 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 		m.speakerReady = true
 	}
 	
-	m.teardownPlayer()
-
 	player := &playerModel {
 		ctrl: &beep.Ctrl{},
 		playlist: playlist,
@@ -123,6 +127,8 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	m.teardownPlayer()
 
 	m.player = player
 	m.state = statePlaying
