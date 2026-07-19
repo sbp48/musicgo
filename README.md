@@ -1,10 +1,16 @@
-A GO TERMINAL MUSIC PLAYER WRITTEN IN GO
+# A TERMINAL MUSIC PLAYER WRITTEN IN GO
 
-UTILIZES:
-Bubble Tea
-Beep
-Tag
+A TUI music player written in go utilizing beep and bubbletea.
 
-ALSO CAN DISPLAY ALBUM ARTWORK IN THE TERMINAL (ONLY IF TERMINAL USES ICAT SO LIKE ONLY IN KITTY)
-BASICALLY ONLY TO BE USED IN KITTY
-OR MAYBE LIKE AN OTHER TERMINAL EMULATOR THAT CAN DO KITTEN ICAT
+## Features
+- can play music
+- shows artwork (terminals that support kitty icat)
+- fast idk
+
+## Utils
+- [BubbleTea]("https://github.com/charmbracelet/bubbletea")
+- [beep]("https://github.com/faiface/beep")
+- [tag]("https://github.com/dhowden/tag")
+
+## How to run
+idk maybe one day
