@@ -14,7 +14,7 @@ A TUI music player written in go utilizing beep and bubbletea.
 
 ## How to run
 ```bash
-go install [github.com/sbp48/musicgo@latest](https://github.com/sbp48/musicgo@latest)
+go install github.com/sbp48/musicgo@latest
 ```
 
 ## Other
