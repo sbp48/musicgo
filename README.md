@@ -31,6 +31,9 @@ Fields:
 | `volumestep` | how much up/down changes the volume per press | `5` |
 | `musicdirectories` | folders scanned (recursively) for `.flac` files | `[$HOME]` |
 | `maxvisibleresults` | how many folder matches the browser shows at once | `15` |
+| `displaycurrenttrack` | show the `TRACK: n/total` indicator on the player screen | `true` |
+| `displaynexttrack` | show the `NEXT: <title>` indicator on the player screen | `true` |
+| `displaykeybinds` | show the keybind hints at the bottom of the player screen | `true` |
 
 also an `preferences.json` file can be added into the directory of a project for easier changes
 

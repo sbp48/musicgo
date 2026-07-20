@@ -8,11 +8,14 @@ import (
 )
 
 type Preferences struct {
-	ResamplingQuality int      `json:"resamplingquality"`
-	InitialVolume     int      `json:"initialvolume"`
-	VolumeStep        int      `json:"volumestep"`
-	MusicDirectories  []string `json:"musicdirectories"`
-	MaxVisibleResults int      `json:"maxvisibleresults"`
+	ResamplingQuality   int      `json:"resamplingquality"`
+	InitialVolume       int      `json:"initialvolume"`
+	VolumeStep          int      `json:"volumestep"`
+	MusicDirectories    []string `json:"musicdirectories"`
+	MaxVisibleResults   int      `json:"maxvisibleresults"`
+	DisplayCurrentTrack bool     `json:"displaycurrenttrack"`
+	DisplayNextTrack    bool     `json:"displaynexttrack"`
+	DisplayKeybinds     bool     `json:"displaykeybinds"`
 }
 
 func defaultPreferences() Preferences {
@@ -22,11 +25,14 @@ func defaultPreferences() Preferences {
 	}
 
 	return Preferences{
-		ResamplingQuality: 10,
-		InitialVolume:     100,
-		VolumeStep:        5,
-		MusicDirectories:  []string{home, "/mnt/DATA/"},
-		MaxVisibleResults: 15,
+		ResamplingQuality:   10,
+		InitialVolume:       100,
+		VolumeStep:          5,
+		MusicDirectories:    []string{home},
+		MaxVisibleResults:   15,
+		DisplayCurrentTrack: true,
+		DisplayNextTrack:    true,
+		DisplayKeybinds:     true,
 	}
 }
 
@@ -77,7 +83,7 @@ func loadPreferences() Preferences {
 }
 
 func (p *Preferences) sanitize(defaults Preferences) {
-	if p.ResamplingQuality < 1 || p.ResamplingQuality > 10 {
+	if p.ResamplingQuality < 1 || p.ResamplingQuality > 64 {
 		p.ResamplingQuality = defaults.ResamplingQuality
 	}
 	if p.InitialVolume < 0 || p.InitialVolume > 100 {

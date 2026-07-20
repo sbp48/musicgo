@@ -28,10 +28,12 @@ type appModel struct {
 	speakerReady bool
 
 	//TODO:
-	// this is kind of stupid because the sample rate for the entire program is set 
+	// this is kind of stupid because the sample rate for the entire program is set
 	// by the first file that was opened, and everything after needs to be resampled
 	// works for now :)
 	masterRate beep.SampleRate
+
+	art *artState
 }
 
 func (m appModel) Init() tea.Cmd {
@@ -53,7 +55,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.teardownPlayer()
 			m.browser.errMsg = ""
 			m.browser.selected = false
-			return m, tea.ClearScreen
+			return m, tea.Batch(tea.ClearScreen, clearAlbumArtCmd(m.art))
 		
 		case tea.KeyMsg:
 			switch msg.String() {
@@ -117,6 +119,10 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 		m.speakerReady = true
 	}
 	
+	if m.art == nil {
+		m.art = newArtState()
+	}
+
 	player := &playerModel {
 		ctrl: &beep.Ctrl{},
 		playlist: playlist,
@@ -124,6 +130,10 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 		volumePercent: m.prefs.InitialVolume,
 		resampleQuality: m.prefs.ResamplingQuality,
 		volumeStep: m.prefs.VolumeStep,
+		displayCurrentTrack: m.prefs.DisplayCurrentTrack,
+		displayNextTrack: m.prefs.DisplayNextTrack,
+		displayKeybinds: m.prefs.DisplayKeybinds,
+		art: m.art,
 	}
 
 	artBytes, err := player.switchTrack(0)
@@ -136,7 +146,7 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 	m.player = player
 	m.state = statePlaying
 
-	return tea.Batch(tea.ClearScreen, tick(), drawAlbumArtCmd(artBytes)), nil
+	return tea.Batch(tea.ClearScreen, tick(), player.drawArtCmd(artBytes)), nil
 }
 
 func (m *appModel) teardownPlayer() {

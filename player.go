@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,7 +56,37 @@ type playerModel struct {
 	volumeStep    int
 
 	resampleQuality int
+
+	displayCurrentTrack bool
+	displayNextTrack    bool
+	displayKeybinds     bool
+
+	art *artState
 }
+
+type artState struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+func newArtState() *artState {
+	return &artState{}
+}
+
+func (a *artState) begin() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	a.mu.Lock()
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.cancel = cancel
+	a.mu.Unlock()
+
+	return ctx
+}
+
+const seekSeconds = 5
 
 // time
 type tickMsg time.Time
@@ -82,7 +114,11 @@ func getWindowSize(fd int) (cols, rows, xpixel, ypixel int, err error) {
 	return int(ws.Col), int(ws.Row), int(ws.Xpixel), int(ws.Ypixel), nil
 }
 
-func drawAlbumArt(imgBytes []byte) {
+func flushStdin() {
+	_ = unix.IoctlSetInt(int(os.Stdin.Fd()), unix.TCFLSH, unix.TCIFLUSH)
+}
+
+func drawAlbumArt(ctx context.Context, imgBytes []byte) {
 	if len(imgBytes) == 0 {
 		return
 	}
@@ -100,30 +136,38 @@ func drawAlbumArt(imgBytes []byte) {
 		args = append(args, fmt.Sprintf("--use-window-size=%d,%d,%d,%d", cols, rows, xpx, ypx))
 	}
 
-	cmd := exec.Command("kitty", args...)
+	cmd := exec.CommandContext(ctx, "kitty", args...)
 
 	cmd.Stdin = bytes.NewReader(imgBytes)
-	cmd.Stdout = os.Stderr
-
-	fmt.Fprint(os.Stderr, "\x1b7") 
-	_ = cmd.Run()
-	fmt.Fprint(os.Stderr, "\x1b8") 
-}
-
-func clearAlbumArt() {
-	cmd := exec.Command("kitty", "+kitten", "icat", "--clear")
 	cmd.Stdout = os.Stderr
 
 	fmt.Fprint(os.Stderr, "\x1b7")
 	_ = cmd.Run()
 	fmt.Fprint(os.Stderr, "\x1b8")
+	flushStdin()
 }
 
-func drawAlbumArtCmd(imgBytes []byte) tea.Cmd {
+// ts so smart
+func clearAlbumArt() {
+	fmt.Fprint(os.Stderr, "\x1b7")
+	fmt.Fprint(os.Stderr, "\x1b_Ga=d,d=A,q=2\x1b\\")
+	fmt.Fprint(os.Stderr, "\x1b8")
+}
+
+func clearAlbumArtCmd(art *artState) tea.Cmd {
+	art.begin() 
+	return func() tea.Msg {
+		clearAlbumArt()
+		return nil
+	}
+}
+
+func (m *playerModel) drawArtCmd(imgBytes []byte) tea.Cmd {
+	ctx := m.art.begin()
 	return func() tea.Msg {
 		clearAlbumArt()
 		if len(imgBytes) > 0 {
-			drawAlbumArt(imgBytes)
+			drawAlbumArt(ctx, imgBytes)
 		}
 		return nil
 	}
@@ -344,6 +388,31 @@ func (m *playerModel) setVolume(percent int) {
 	speaker.Unlock()
 }
 
+func (m *playerModel) seek(deltaSeconds int) tea.Cmd {
+	if m.streamer == nil {
+		return nil
+	}
+
+	newPos := m.streamer.Position() + deltaSeconds*int(m.sampleRate)
+	if newPos < 0 {
+		newPos = 0
+	}
+
+	if length := m.streamer.Len(); newPos >= length {
+		nextIdx := (m.currentIdx + 1) % len(m.playlist)
+		artBytes, err := m.switchTrack(nextIdx)
+		if err != nil {
+			return nil
+		}
+		return m.drawArtCmd(artBytes)
+	}
+
+	speaker.Lock()
+	_ = m.streamer.Seek(newPos)
+	speaker.Unlock()
+	return nil
+}
+
 // the view function draws the terminal
 func (m *playerModel) View() string {
 	if m == nil || m.streamer == nil || len(m.playlist) == 0 {
@@ -354,9 +423,9 @@ func (m *playerModel) View() string {
 	currentTime := songTime(m.streamer.Position(), m.sampleRate)
 	totalTime := songTime(m.streamer.Len(), m.sampleRate)
 
-	var status string = "playing..."
+	var status string = "PLAYING..."
 	if m.isPaused {
-		status = "paused..."
+		status = "PAUSED..."
 	}
 
 	const pad = "\x1b[28C"
@@ -367,14 +436,24 @@ func (m *playerModel) View() string {
 	output.WriteString(pad + "TITLE: " + currentTrack.title + "\n")
 	output.WriteString(pad + "ALBUM: " + currentTrack.album + "\n")
 	output.WriteString(pad + "ARTIST: " + currentTrack.artist + "\n\n")
+	if m.displayCurrentTrack {
+		output.WriteString(pad + fmt.Sprintf("TRACK:  %d/%d", m.currentIdx+1, len(m.playlist)) + "\n")
+	}
+	if m.displayNextTrack {
+		nextTrack := m.playlist[(m.currentIdx+1)%len(m.playlist)]
+		output.WriteString(pad + "NEXT:   " + nextTrack.title + "\n")
+	}
 	output.WriteString(pad + "TIME:   " + currentTime + " / " + totalTime + "\n")
 	output.WriteString(pad + "STATUS: " + status + "\n")
 	output.WriteString(pad + fmt.Sprintf("VOLUME: %d%%", m.volumePercent) + "\n\n")
-	output.WriteString(pad + "[q]       QUIT\n")
-	output.WriteString(pad + "[esc]     BACK TO FOLDERS\n")
-	output.WriteString(pad + "[space]   PLAY / PAUSE\n")
-	output.WriteString(pad + "[p/n]     PREV / NEXT\n")
-	output.WriteString(pad + "[up/down] VOLUME\n")
+	if m.displayKeybinds {
+		output.WriteString(pad + "[q]         QUIT\n")
+		output.WriteString(pad + "[esc]       BACK TO FOLDERS\n")
+		output.WriteString(pad + "[space]     PLAY / PAUSE\n")
+		output.WriteString(pad + "[p/n]       PREV / NEXT\n")
+		output.WriteString(pad + "[up/down]   VOLUME\n")
+		output.WriteString(pad + "[left/right] SEEK\n")
+	}
 
 	output.WriteString("\n")
 
@@ -411,7 +490,7 @@ func (m *playerModel) Update(msg tea.Msg) (*playerModel, tea.Cmd) {
 			if err != nil {
 				return m, nil
 			}
-			return m, drawAlbumArtCmd(artBytes)
+			return m, m.drawArtCmd(artBytes)
 		// skips to prev song
 		case "p":
 			prevIdx := (m.currentIdx - 1 + len(m.playlist)) % len(m.playlist)
@@ -419,7 +498,7 @@ func (m *playerModel) Update(msg tea.Msg) (*playerModel, tea.Cmd) {
 			if err != nil {
 				return m, nil
 			}
-			return m, drawAlbumArtCmd(artBytes)
+			return m, m.drawArtCmd(artBytes)
 		// raises volume
 		case "up":
 			m.setVolume(m.volumePercent + m.volumeStep)
@@ -428,6 +507,10 @@ func (m *playerModel) Update(msg tea.Msg) (*playerModel, tea.Cmd) {
 		case "down":
 			m.setVolume(m.volumePercent - m.volumeStep)
 			return m, nil
+		case "right":
+			return m, m.seek(seekSeconds)
+		case "left":
+			return m, m.seek(-seekSeconds)
 		}
 	// time update
 	case tickMsg:
@@ -440,7 +523,7 @@ func (m *playerModel) Update(msg tea.Msg) (*playerModel, tea.Cmd) {
 				nextIdx := (m.currentIdx + 1) % len(m.playlist)
 				artBytes, err := m.switchTrack(nextIdx)
 				if err == nil {
-					return m, tea.Batch(tick(), drawAlbumArtCmd(artBytes))
+					return m, tea.Batch(tick(), m.drawArtCmd(artBytes))
 				}
 			}
 		}
