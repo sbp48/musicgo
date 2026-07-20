@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,9 +25,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// one day the user shall control this
-const SAMPLE_QUALITY int = 10
-
 // track struct to keep info about a track
 type Track struct {
 	path string
@@ -35,6 +34,8 @@ type Track struct {
 	artist string
 	genre  string
 	album  string
+	disc   int
+	track  int
 }
 
 type playerModel struct {
@@ -50,6 +51,9 @@ type playerModel struct {
 
 	volume        *effects.Volume
 	volumePercent int
+	volumeStep    int
+
+	resampleQuality int
 }
 
 // time
@@ -157,6 +161,8 @@ func loadFolder(folderPath string) ([]Track, error) {
 			songArtist := "Unknown Artist"
 			songAlbum := "Unknown Album"
 			songGenre := "Unknown Genre"
+			songDisc := 0
+			songTrack := 0
 
 			metadata, err := tag.ReadFrom(f)
 			if err == nil {
@@ -172,6 +178,9 @@ func loadFolder(folderPath string) ([]Track, error) {
 				if metadata.Album() != "" {
 					songAlbum = metadata.Album()
 				}
+				raw := metadata.Raw()
+				songDisc = parseTagNumber(raw["discnumber"])
+				songTrack = parseTagNumber(raw["tracknumber"])
 			}
 
 			// closes the file (memory be free!)
@@ -184,14 +193,46 @@ func loadFolder(folderPath string) ([]Track, error) {
 				album:  songAlbum,
 				genre:  songGenre,
 				artist: songArtist,
+				disc:   songDisc,
+				track:  songTrack,
 			}
 
 			// appends the found track to the playlist
 			playlist = append(playlist, newTrack)
 		}
 	}
+
+	sortPlaylist(playlist)
+
 	// returns the playlist after the loop has finished and every file in a folder has been checked
 	return playlist, nil
+}
+
+func parseTagNumber(v interface{}) int {
+	s, ok := v.(string)
+	if !ok {
+		return 0
+	}
+	s = strings.TrimSpace(strings.SplitN(s, "/", 2)[0])
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
+func sortPlaylist(playlist []Track) {
+	sort.SliceStable(playlist, func(i, j int) bool {
+		a, b := playlist[i], playlist[j]
+		aKnown, bKnown := a.track != 0, b.track != 0
+		if aKnown != bKnown {
+			return aKnown
+		}
+		if !aKnown {
+			return false
+		}
+		if a.disc != b.disc {
+			return a.disc < b.disc
+		}
+		return a.track < b.track
+	})
 }
 
 func peekSampleRate(path string) (beep.SampleRate, error) {
@@ -252,9 +293,9 @@ func (m *playerModel) switchTrack(newIdx int) ([]byte, error) {
 	}
 
 	// resamples the audio file to match speaker sample rate
-	resampled := beep.Resample(SAMPLE_QUALITY, format.SampleRate, m.sampleRate, streamer)
+	resampled := beep.Resample(m.resampleQuality, format.SampleRate, m.sampleRate, streamer)
 
-	baseVolume, baseSilent := 0.0, false
+	baseVolume, baseSilent := volumeGain(m.volumePercent)
 	if m.volume != nil {
 		baseVolume, baseSilent = m.volume.Volume, m.volume.Silent
 	}
@@ -282,6 +323,13 @@ func (m *playerModel) switchTrack(newIdx int) ([]byte, error) {
 	return artBytes, nil
 }
 
+func volumeGain(percent int) (volume float64, silent bool) {
+	if percent <= 0 {
+		return 0, true
+	}
+	return math.Log2(float64(percent) / 100.0), false
+}
+
 func (m *playerModel) setVolume(percent int) {
 	if percent < 0 {
 		percent = 0
@@ -292,12 +340,7 @@ func (m *playerModel) setVolume(percent int) {
 
 	speaker.Lock()
 	m.volumePercent = percent
-	if percent == 0 {
-		m.volume.Silent = true
-	} else {
-		m.volume.Silent = false
-		m.volume.Volume = math.Log2(float64(percent) / 100.0)
-	}
+	m.volume.Volume, m.volume.Silent = volumeGain(percent)
 	speaker.Unlock()
 }
 
@@ -379,11 +422,11 @@ func (m *playerModel) Update(msg tea.Msg) (*playerModel, tea.Cmd) {
 			return m, drawAlbumArtCmd(artBytes)
 		// raises volume
 		case "up":
-			m.setVolume(m.volumePercent + 5)
+			m.setVolume(m.volumePercent + m.volumeStep)
 			return m, nil
 		// lowers volume
 		case "down":
-			m.setVolume(m.volumePercent - 5)
+			m.setVolume(m.volumePercent - m.volumeStep)
 			return m, nil
 		}
 	// time update

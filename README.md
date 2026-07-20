@@ -17,5 +17,22 @@ A TUI music player written in go utilizing beep and bubbletea.
 go install github.com/sbp48/musicgo@latest
 ```
 
+## Preferences
+edit `preferences.json` directly. It is created
+with defaults the first time you run gomusic, at:
+- Linux: `~/.config/gomusic/preferences.json`
+- (or `$XDG_CONFIG_HOME/gomusic/preferences.json`)
+
+Fields:
+| key | meaning | default |
+| --- | --- | --- |
+| `resamplingquality` | beep resample quality, 1-10 (higher = better sound, more CPU) | `10` |
+| `initialvolume` | volume percent (0-100) a track starts at | `100` |
+| `volumestep` | how much up/down changes the volume per press | `5` |
+| `musicdirectories` | folders scanned (recursively) for `.flac` files | `[$HOME, "/mnt/DATA/"]` |
+| `maxvisibleresults` | how many folder matches the browser shows at once | `15` |
+
+also an `preferences.json` file can be added into the directory of a project for easier changes
+
 ## Other
 maybe Linux also needs ALSA

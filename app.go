@@ -23,6 +23,7 @@ type appModel struct {
 	state appState
 	browser browserModel
 	player *playerModel
+	prefs Preferences
 
 	speakerReady bool
 
@@ -120,7 +121,9 @@ func (m *appModel) openFolder(path string) (tea.Cmd, error) {
 		ctrl: &beep.Ctrl{},
 		playlist: playlist,
 		sampleRate: m.masterRate,
-		volumePercent: 100,
+		volumePercent: m.prefs.InitialVolume,
+		resampleQuality: m.prefs.ResamplingQuality,
+		volumeStep: m.prefs.VolumeStep,
 	}
 
 	artBytes, err := player.switchTrack(0)

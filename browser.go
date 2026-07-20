@@ -21,9 +21,6 @@ type folderChosenMsg struct {
 	path string
 }
 
-// how many dir matches can the user see
-const MAX_VISIBLE_RESULTS = 15
-
 type browserModel struct {
 	input textinput.Model
 
@@ -35,26 +32,22 @@ type browserModel struct {
 	scanning bool
 	errMsg string
 	selected bool
+
+	maxVisibleResults int
 }
 
-func newBrowserModel() browserModel {
+func newBrowserModel(prefs Preferences) browserModel {
 	ti := textinput.New()
 	ti.Placeholder = "SEARCH FOR A FOLDER..."
 	ti.Focus()
 	ti.CharLimit = 256
 	ti.Width = 50
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-
-	roots := []string{home, "/mnt/DATA/"}
-
 	return browserModel {
 		input: ti,
-		roots: roots,
+		roots: prefs.MusicDirectories,
 		scanning: true,
+		maxVisibleResults: prefs.MaxVisibleResults,
 	}
 }
 
@@ -180,8 +173,8 @@ func (m browserModel) View() string {
 			b.WriteString("  NO MATCHES!")
 		default:
 			for i, d := range m.filtered {
-				if i >= MAX_VISIBLE_RESULTS {
-					b.WriteString(fmt.Sprintf(" ... AND %d MORE\n", len(m.filtered)-MAX_VISIBLE_RESULTS))
+				if i >= m.maxVisibleResults {
+					b.WriteString(fmt.Sprintf(" ... AND %d MORE\n", len(m.filtered)-m.maxVisibleResults))
 					break
 				}
 				marker := "   "

@@ -6,13 +6,16 @@ import (
 )
 
 func main() {
+	prefs := loadPreferences()
+
 	initial := appModel {
 		state: stateBrowsing,
-		browser: newBrowserModel(),
+		browser: newBrowserModel(prefs),
+		prefs: prefs,
 	}
 
 	p := tea.NewProgram(initial, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		log.Fatal("error running program: %v", err)
+		log.Fatalf("error running program: %v", err)
 	}
 }
